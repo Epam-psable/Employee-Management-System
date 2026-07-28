@@ -5,7 +5,20 @@ from .models import Emp
 
 def emp_home(request):
     emps=Emp.objects.all()
-    return render(request,"emp/home.html",{'emps':emps})
+    total_employees = Emp.objects.count()
+    active_employees = Emp.objects.filter(working=True).count()
+    inactive_employees = Emp.objects.filter(working=False).count()
+
+    return render(
+        request,
+        "emp/home.html",
+        {
+            'emps': emps,
+            'total_employees': total_employees,
+            'active_employees': active_employees,
+            'inactive_employees': inactive_employees,
+        },
+    )
 
 
 def add_emp(request):
