@@ -4,7 +4,13 @@ from .models import Emp
 
 
 def emp_home(request):
-    emps=Emp.objects.all()
+    q = request.GET.get("q", "").strip()
+
+    if q:
+        emps = Emp.objects.filter(name__icontains=q)
+    else:
+        emps = Emp.objects.all()
+
     total_employees = Emp.objects.count()
     active_employees = Emp.objects.filter(working=True).count()
     inactive_employees = Emp.objects.filter(working=False).count()
@@ -14,6 +20,7 @@ def emp_home(request):
         "emp/home.html",
         {
             'emps': emps,
+            'q': q,
             'total_employees': total_employees,
             'active_employees': active_employees,
             'inactive_employees': inactive_employees,
