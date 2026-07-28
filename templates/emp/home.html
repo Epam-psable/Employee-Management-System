@@ -8,6 +8,37 @@
   </head>
   <body>
     {% include 'emp/navbar.html' %}
+    
+
+    <div class="container my-3">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="card">
+            <div class="card-body">
+              <h5 class="card-title">Total Employees</h5>
+              <p class="card-text display-6 mb-0">{{ total_employees }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card">
+            <div class="card-body">
+              <h5 class="card-title">Active Employees</h5>
+              <p class="card-text display-6 mb-0">{{ active_employees }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card">
+            <div class="card-body">
+              <h5 class="card-title">Inactive Employees</h5>
+              <p class="card-text display-6 mb-0">{{ inactive_employees }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <h1 class="text-center my-3">Employees Table</h1>
     <div class="container">
       <div class="row">
