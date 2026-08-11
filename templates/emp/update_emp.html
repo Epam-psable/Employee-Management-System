@@ -15,6 +15,11 @@
         <div class="col-md-6 offset-md-3">
           <div class="card bg-dark text-white">
             <div class="card-body">
+              {% if error %}
+                <div class="alert alert-danger" role="alert">
+                  {{ error }}
+                </div>
+              {% endif %}
               <form action="/emp/do-update-emp/{{emp.id}}" method="POST">
                 {% csrf_token %}
                 <div class="mb-3">
@@ -67,10 +72,10 @@
                 </div>
                 <div class="mb-3 ">
                   <label for="department">Departments</label>
-                  <select value="{{emp.department}}" name="emp_department" id="department" class="form-control">
-                      <option value="CSE">Computer Science</option>
-                      <option value="ME">Mechanical Engg</option>
-                      <option value="EE">Electrical Engg</option>
+                  <select name="emp_department" id="department" class="form-control">
+                      <option value="CSE" {% if emp.department == 'CSE' %}selected{% endif %}>Computer Science</option>
+                      <option value="ME" {% if emp.department == 'ME' %}selected{% endif %}>Mechanical Engg</option>
+                      <option value="EE" {% if emp.department == 'EE' %}selected{% endif %}>Electrical Engg</option>
                   </select>
                 </div>
                 <div class="container text-center">
