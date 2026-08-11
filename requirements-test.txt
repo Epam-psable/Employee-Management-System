@@ -1,0 +1,8 @@
+pytest>=8.0.0
+pytest-playwright>=0.5.0
+playwright>=1.45.0
+allure-pytest>=2.13.5
+pytest-xdist>=3.6.1
+
+# pytest-django intentionally NOT required for Playwright E2E suite.
+# Keep it in a separate requirements file if/when you add Django unit/integration tests.
