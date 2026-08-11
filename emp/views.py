@@ -1,6 +1,10 @@
+from django.db import IntegrityError
 from django.shortcuts import redirect, render
-from django.http import HttpResponse
+
 from .models import Emp
+
+
+DUPLICATE_EMP_ID_ERROR = "Employee ID already exists. Please use a different ID."
 
 
 def emp_home(request):
@@ -29,58 +33,133 @@ def emp_home(request):
 
 
 def add_emp(request):
-    if request.method=="POST":
-        emp_name=request.POST.get("emp_name")
-        emp_id=request.POST.get("emp_id")
-        emp_phone=request.POST.get("emp_phone")
-        emp_address=request.POST.get("emp_address")
-        emp_working=request.POST.get("emp_working")
-        emp_department=request.POST.get("emp_department")
-        e=Emp()
-        e.name=emp_name
-        e.emp_id=emp_id
-        e.phone=emp_phone
-        e.address=emp_address
-        e.department=emp_department
-        if emp_working is None:
-            e.working=False
-        else:
-            e.working=True
-        e.save()
+    if request.method == "POST":
+        emp_name = (request.POST.get("emp_name") or "").strip()
+        emp_id = (request.POST.get("emp_id") or "").strip()
+        emp_phone = (request.POST.get("emp_phone") or "").strip()
+        emp_address = (request.POST.get("emp_address") or "").strip()
+        emp_working = request.POST.get("emp_working")
+        emp_department = (request.POST.get("emp_department") or "").strip()
+
+        if Emp.objects.filter(emp_id=emp_id).exists():
+            return render(
+                request,
+                "emp/add_emp.html",
+                {
+                    "error": DUPLICATE_EMP_ID_ERROR,
+                    "emp_name": emp_name,
+                    "emp_id": emp_id,
+                    "emp_phone": emp_phone,
+                    "emp_address": emp_address,
+                    "emp_working": emp_working,
+                    "emp_department": emp_department,
+                },
+            )
+
+        e = Emp(
+            name=emp_name,
+            emp_id=emp_id,
+            phone=emp_phone,
+            address=emp_address,
+            department=emp_department,
+            working=bool(emp_working),
+        )
+        try:
+            e.save()
+        except IntegrityError:
+            return render(
+                request,
+                "emp/add_emp.html",
+                {
+                    "error": DUPLICATE_EMP_ID_ERROR,
+                    "emp_name": emp_name,
+                    "emp_id": emp_id,
+                    "emp_phone": emp_phone,
+                    "emp_address": emp_address,
+                    "emp_working": emp_working,
+                    "emp_department": emp_department,
+                },
+            )
+
         return redirect("/emp/home/")
-    return render(request,"emp/add_emp.html",{})
+
+    return render(request, "emp/add_emp.html", {})
 
 def delete_emp(request,emp_id):
     emp=Emp.objects.get(pk=emp_id)
     emp.delete()
     return redirect("/emp/home/")
 
-def update_emp(request,emp_id):
-    emp=Emp.objects.get(pk=emp_id)
-    print("Yes Bhai")
-    return render(request,"emp/update_emp.html",{
-        'emp':emp
-    })
+def update_emp(request, emp_id):
+    emp = Emp.objects.get(pk=emp_id)
+    return render(
+        request,
+        "emp/update_emp.html",
+        {
+            "emp": emp,
+        },
+    )
 
-def do_update_emp(request,emp_id):
-    if request.method=="POST":
-        emp_name=request.POST.get("emp_name")
-        emp_id_temp=request.POST.get("emp_id")
-        emp_phone=request.POST.get("emp_phone")
-        emp_address=request.POST.get("emp_address")
-        emp_working=request.POST.get("emp_working")
-        emp_department=request.POST.get("emp_department")
+def do_update_emp(request, emp_id):
+    if request.method == "POST":
+        emp_name = (request.POST.get("emp_name") or "").strip()
+        emp_id_temp = (request.POST.get("emp_id") or "").strip()
+        emp_phone = (request.POST.get("emp_phone") or "").strip()
+        emp_address = (request.POST.get("emp_address") or "").strip()
+        emp_working = request.POST.get("emp_working")
+        emp_department = (request.POST.get("emp_department") or "").strip()
 
-        e=Emp.objects.get(pk=emp_id)
+        e = Emp.objects.get(pk=emp_id)
 
-        e.name=emp_name
-        e.emp_id=emp_id_temp
-        e.phone=emp_phone
-        e.address=emp_address
-        e.department=emp_department
-        if emp_working is None:
-            e.working=False
-        else:
-            e.working=True
-        e.save()
+        if (
+            Emp.objects.filter(emp_id=emp_id_temp)
+            .exclude(pk=e.pk)
+            .exists()
+        ):
+            attempted_emp = Emp(
+                id=e.id,
+                name=emp_name,
+                emp_id=emp_id_temp,
+                phone=emp_phone,
+                address=emp_address,
+                department=emp_department,
+                working=bool(emp_working),
+            )
+            return render(
+                request,
+                "emp/update_emp.html",
+                {
+                    "emp": attempted_emp,
+                    "error": DUPLICATE_EMP_ID_ERROR,
+                },
+            )
+
+        e.name = emp_name
+        e.emp_id = emp_id_temp
+        e.phone = emp_phone
+        e.address = emp_address
+        e.department = emp_department
+        e.working = bool(emp_working)
+
+        try:
+            e.save()
+        except IntegrityError:
+            attempted_emp = Emp(
+                id=e.id,
+                name=emp_name,
+                emp_id=emp_id_temp,
+                phone=emp_phone,
+                address=emp_address,
+                department=emp_department,
+                working=bool(emp_working),
+            )
+            return render(
+                request,
+                "emp/update_emp.html",
+                {
+                    "emp": attempted_emp,
+                    "error": DUPLICATE_EMP_ID_ERROR,
+                },
+            )
+
     return redirect("/emp/home/")
