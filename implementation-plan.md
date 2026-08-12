@@ -1,173 +1,175 @@
-# Implementation Plan - EPMCDMETST-59268
+# Implementation Plan - EPMCDMETST-59460
 
 ## Jira User Story (reference)
-- **Key**: EPMCDMETST-59268
-- **Summary**: Prevent duplicate Employee ID on create/update with user-friendly validation message
+- **Key**: EPMCDMETST-59460
+- **Summary**: Make employee deletion safer with confirmation and POST-only delete
 - **Priority**: Medium
 - **Acceptance Criteria**:
-  1. Given an existing employee with emp_id = X, when a user attempts to create a new employee with emp_id = X, then the employee is not saved and the UI shows a clear validation error.
-  2. Given an existing employee with emp_id = X, when a user edits another employee and sets emp_id = X, then the update is blocked with a validation error.
-  3. Existing valid records continue to display and function normally.
+  1. Clicking “Delete” prompts the user to confirm deletion.
+  2. Employee is deleted only after confirmation and via a POST request.
+  3. After successful deletion, the user is redirected to the home page and the employee no longer appears in the list.
+  4. If deletion is cancelled, no data changes occur.
 
 ## Objective
-Ensure employee records have a **unique** `emp_id` across create and update, and provide a clear, user-friendly validation error in the UI when a duplicate is attempted.
-
-- Data-level protection: add a database uniqueness constraint for `Emp.emp_id`.
-- App-level UX: detect duplicates on form submission (add/update) and re-render the form with an error instead of redirecting.
+Make employee deletion more intentional, safe, and standards-compliant by:
+- Removing delete actions from GET links (avoid accidental/unintended deletes).
+- Requiring explicit user confirmation before deleting an employee.
+- Ensuring delete is performed via POST-only with CSRF protection.
 
 ---
 
 ## Scope
 In scope:
-1. Enforce unique constraint on `Emp.emp_id` (model + migration).
-2. Update create (`add_emp`) and update (`do_update_emp`) logic to prevent saving duplicates and return a validation error.
-3. Update add/update templates to show the error message.
-4. Add tests covering duplicate `emp_id` on create and update.
+1. UI change on the employee list (home page) to present a confirmation step prior to delete.
+2. Change delete flow to submit a POST request (not GET).
+3. Backend hardening: only perform delete on POST; otherwise reject/redirect without deleting.
+4. Add tests for POST-only behavior and successful deletion.
 
 ## Out of scope
-- Any redesign of UI beyond adding error messaging.
-- Expanding search or other enhancements.
-- Additional validation (phone format, required fields beyond what is needed for this story).
-- Automated deduplication/cleanup of existing duplicate data beyond the prerequisite step to make migrations succeed.
-- Admin site improvements.
+- Soft delete / archiving.
+- Authentication/authorization changes.
+- Bulk delete.
+- Changes to add/update employee flows.
 
 ---
 
 ## Existing components (repo observations)
-- **Model**: `Emp` in `emp/models.py` with fields: `name`, `emp_id`, `phone`, `address`, `working`, `department`. Currently `emp_id` is not unique.
-- **Views** (`emp/views.py`):
-  - `add_emp`: reads POST values, creates `Emp`, calls `save()`, then redirects.
-  - `do_update_emp`: loads an `Emp` by pk, updates fields, calls `save()`, then redirects.
-  - No Django Forms are used; validation must be handled manually.
-- **Templates**:
-  - `templates/emp/add_emp.html`
-  - `templates/emp/update_emp.html`
-  - No existing error placeholders.
+- **Django app**: `emp`
+- **URL route**: `emp/urls.py` currently maps `path("delete-emp/<int:emp_id>", delete_emp)`.
+- **View**: `emp/views.py::delete_emp` currently deletes immediately regardless of method:
+  - `emp=Emp.objects.get(pk=emp_id)` then `emp.delete()` then redirect.
+- **Template**: `templates/emp/home.html` renders delete as a GET link:
+  - `<a href="/emp/delete-emp/{{e.id}}" class="btn btn-danger btn-sm">Delete</a>`
 
 ---
 
 ## Impacted files
 Expected direct changes:
-- `emp/models.py` — add uniqueness constraint for `emp_id`.
-- `emp/migrations/*` — new migration to add unique constraint/index.
-- `emp/views.py` — add duplicate checks + IntegrityError handling; return render with error.
-- `templates/emp/add_emp.html` — render error (and optionally repopulate fields).
-- `templates/emp/update_emp.html` — render error (and optionally repopulate fields).
-- `emp/tests.py` — add tests.
+- `emp/views.py` — enforce POST-only delete, handle non-POST safely.
+- `templates/emp/home.html` — replace GET delete link with POST form + confirmation.
+- `emp/tests.py` — add tests covering POST-only and successful POST delete.
+
+Optional / confirm during implementation:
+- `emp/urls.py` — may remain unchanged (same URL, different HTTP method handling). Optionally add a dedicated confirm route/template if required.
 
 ---
 
 ## Frontend changes
-Because the app uses manual HTML forms (not Django Forms), error feedback must be passed via view context.
+**Goal:** ensure users confirm deletion, and that the delete action sends a POST request with CSRF token.
 
-### `templates/emp/add_emp.html`
-- Add an error container (e.g., Bootstrap alert) rendered when `error` exists in context.
-- Repopulate form values on error using context variables (e.g., `emp_name`, `emp_id`, etc.) so the user doesn’t lose input.
-- Recommended error copy: "Employee ID already exists. Please use a different ID." (must be clear; exact wording can vary).
+### Preferred approach (minimal): POST form + native confirm()
+In `templates/emp/home.html`:
+- Replace the delete `<a>` with a small inline `<form method="POST" action="/emp/delete-emp/{{ e.id }}">`.
+- Add `{% csrf_token %}`.
+- Add confirmation via `onsubmit="return confirm('Are you sure you want to delete this employee?');"`.
+- Keep styling consistent (Bootstrap). For example:
+  - Use `style="display:inline;"` on the form so it stays in the table action column.
 
-### `templates/emp/update_emp.html`
-- Add similar error container.
-- Ensure displayed values reflect the user’s attempted changes when re-rendering after validation failure.
-  - Option A: pass a separate `form` dict in context and use those values in template.
-  - Option B: pass `emp` plus override variables.
+**Acceptance criteria mapping:**
+- AC1: Browser confirm dialog prompts user.
+- AC4: If user cancels, form submission is aborted and no backend call is made.
+
+### Alternate approach (if required): Bootstrap modal
+If the product requires a styled modal instead of browser confirm:
+- Add a single Bootstrap modal component to the page.
+- Each Delete button sets the target employee id (via data attributes) and updates the modal form action.
+- Confirm button submits the POST form.
+
+(Plan assumes the minimal confirm() approach unless UX requirements specify otherwise.)
 
 ---
 
 ## Backend changes
+### 1) Enforce POST-only delete
+In `emp/views.py::delete_emp(request, emp_id)`:
+- Only delete when `request.method == "POST"`.
+- For GET/other methods:
+  - Option A (strict): return `HttpResponseNotAllowed(["POST"])`.
+  - Option B (tolerant): redirect to `/emp/home/` without deleting.
 
-### 1) Model-level uniqueness
-In `emp/models.py`, enforce uniqueness using one of:
-- `emp_id = models.CharField(max_length=200, unique=True)`
-- or `UniqueConstraint(fields=['emp_id'], name='unique_emp_emp_id')` in `Meta.constraints`.
+**Recommendation:** Option A is more correct; Option B is friendlier. Choose one and align tests accordingly.
 
-Also consider trimming user input (`.strip()`) in views before validating/saving to avoid duplicates caused by whitespace.
+### 2) Handle missing records gracefully
+Currently `Emp.objects.get(pk=emp_id)` will raise `Emp.DoesNotExist` and 500.
+- Use `get_object_or_404(Emp, pk=emp_id)` OR handle `DoesNotExist` and redirect.
 
-### 2) View-level validation & error handling
-In `emp/views.py`:
-
-#### `add_emp`
-- Strip `emp_id`.
-- Pre-check:
-  - `if Emp.objects.filter(emp_id=emp_id).exists():` then render `emp/add_emp.html` with `error` and repopulation values.
-- Save only if unique.
-- Add a DB backstop:
-  - wrap `e.save()` in try/except for `django.db.IntegrityError` to catch race conditions and render the same friendly error.
-
-#### `do_update_emp`
-- Strip the submitted `emp_id`.
-- Pre-check duplicates excluding current record:
-  - `if Emp.objects.filter(emp_id=emp_id_temp).exclude(pk=emp_id).exists():` then render `emp/update_emp.html` with `error` and attempted values.
-- Otherwise save; similarly wrap `save()` in try/except `IntegrityError`.
+### 3) Redirect after successful delete
+After deleting, redirect to `/emp/home/` (matches current behavior and AC3).
 
 ---
 
 ## Database impact
-- A unique index/constraint will be added for `emp_id`.
-- Migration will fail if the existing database contains duplicates.
-
-### Pre-migration operational step
-Before applying migration in any environment with existing data, run a check for duplicates and resolve them:
-```py
-from emp.models import Emp
-from django.db.models import Count
-
-dupes = (Emp.objects.values('emp_id')
-         .annotate(c=Count('id'))
-         .filter(c__gt=1))
-print(list(dupes))
-```
-Resolve duplicates manually (e.g., update `emp_id` values) so the migration can apply.
+None.
 
 ---
 
 ## Testing strategy
-Add Django unit tests in `emp/tests.py`.
+Add Django tests in `emp/tests.py` using `django.test.TestCase` and the test client.
 
-1. **Create duplicate blocked**
-- Create an employee with `emp_id='E123'`.
-- POST to `/emp/add-emp/` with the same `emp_id`.
-- Assert:
-  - response status is 200 (form re-rendered) and contains error message
-  - employee count does not increase
+### Test cases
+1) **GET does not delete (POST-only enforced)**
+- Create an `Emp` record.
+- Issue GET to `/emp/delete-emp/<id>`.
+- Assert record still exists.
+- Assert response is either:
+  - 405 (if using HttpResponseNotAllowed), OR
+  - 302 redirect to `/emp/home/` (if using tolerant redirect).
 
-2. **Update duplicate blocked**
-- Create employee A with `emp_id='E123'` and employee B with `emp_id='E456'`.
-- POST update for B with `emp_id='E123'`.
-- Assert:
-  - response status is 200 and contains error
-  - B’s `emp_id` remains unchanged in DB
+2) **POST deletes and redirects**
+- Create an `Emp` record.
+- Issue POST to `/emp/delete-emp/<id>`.
+- Assert response is redirect to `/emp/home/`.
+- Assert record no longer exists.
 
-3. **DB constraint backstop** (optional but recommended)
-- Attempt to create two `Emp` objects with same `emp_id` and assert `IntegrityError`.
+3) **Cancel behavior**
+This is primarily client-side. We validate it indirectly by ensuring GET cannot delete (AC4 server-side safety) and via manual verification.
+
+---
+
+## Security considerations
+- Deleting via POST reduces CSRF risk compared to GET.
+- Ensure `{% csrf_token %}` is included in the delete form.
+- Ensure the backend rejects non-POST methods.
 
 ---
 
 ## Risks
-- **Migration failure** if duplicates exist in current DB.
-  - Mitigation: run the duplicate check and fix data before applying migration.
-- **Race condition** between pre-check and save.
-  - Mitigation: DB unique constraint + `IntegrityError` handling.
-- **User input normalization ambiguity** (case-sensitivity, whitespace).
-  - Assumption: exact-match uniqueness; we will trim whitespace but not enforce case-insensitive uniqueness unless required.
+- Other pages/templates might still use the old GET delete link.
+  - Mitigation: repo-wide search for `/emp/delete-emp/` and update all occurrences.
+- If CSRF token is omitted, POST delete will fail with 403.
+  - Mitigation: add token and test the flow.
+- Behavior change for users who bookmarked the delete URL.
+  - Mitigation: GET should not delete; optionally redirect them safely.
 
 ---
 
 ## Assumptions
-- Requirements are limited to preventing duplicates and showing a clear UI error.
-- The app remains function-based with manual form parsing (no refactor to Django Forms in this story).
-- Default branch is `main`.
+- No authentication/permissions currently in scope.
+- Confirmation can be implemented as a browser confirm() dialog.
+- The delete endpoint URL stays the same; only HTTP method changes.
 
 ---
 
 ## Implementation sequence (dependency-ordered)
-1. Review current model/view/template flows for employee creation and update.
-2. Identify and resolve any existing duplicate `emp_id` data in target DB(s) (operational prerequisite).
-3. Update `emp/models.py` to enforce `emp_id` uniqueness.
-4. Generate and commit migration in `emp/migrations/`.
-5. Update `emp/views.py` to:
-   - strip and validate `emp_id` uniqueness on create/update
-   - render templates with clear error on duplicates
-   - catch `IntegrityError` and show same message
-6. Update templates to display `error` and repopulate entered values on validation failure.
-7. Add/extend tests in `emp/tests.py` for create and update duplicate scenarios.
-8. Run test suite and perform basic manual verification in the UI.
+1. **Repository scan**
+   - Locate all delete links/actions (search for `delete-emp` across templates).
+2. **Backend: harden delete endpoint**
+   - Update `emp/views.py::delete_emp` to enforce POST-only and handle missing employee id safely.
+3. **Frontend: update home page delete control**
+   - Modify `templates/emp/home.html` to use a POST form + CSRF + confirmation.
+4. **Tests**
+   - Update `emp/tests.py` with GET-not-delete and POST-delete tests.
+5. **Manual verification**
+   - Navigate to `/emp/home/`.
+   - Click Delete → confirm prompt appears.
+   - Cancel → employee remains.
+   - Confirm → employee removed and redirected.
+   - Try visiting delete URL directly (GET) → should not delete.
+
+---
+
+## Verification steps (post-implementation)
+- **AC1:** Clicking Delete prompts confirmation.
+- **AC2:** Network/devtools shows POST request with CSRF token and no delete on GET.
+- **AC3:** After confirm, redirect to home and employee removed from list.
+- **AC4:** Cancel results in no deletion; GET requests also do not delete.
